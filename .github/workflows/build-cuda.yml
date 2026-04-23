@@ -29,8 +29,9 @@ jobs:
         id: check
         run: |
           # Get latest release from llama.cpp
-          LATEST_RELEASE=$(curl -s https://api.github.com/repos/ggml-org/llama.cpp/releases/latest | jq -r '.tag_name')
-          RELEASE_HASH=$(curl -s https://api.github.com/repos/ggml-org/llama.cpp/releases/latest | jq -r '.target_commitish')
+          # Get the most recent release from llama.cpp (including pre-releases)
+          LATEST_RELEASE=$(curl -s https://api.github.com/repos/ggml-org/llama.cpp/releases | jq -r '.[0].tag_name')
+          RELEASE_HASH=$(curl -s https://api.github.com/repos/ggml-org/llama.cpp/releases | jq -r '.[0].target_commitish')
           
           echo "Latest llama.cpp release: $LATEST_RELEASE"
           echo "Release hash: $RELEASE_HASH"
