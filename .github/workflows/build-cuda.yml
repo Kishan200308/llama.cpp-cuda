@@ -58,12 +58,12 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        cuda_version: ['12.6.0']
+        cuda_version: ['12.6.3']
         include:
-          - cuda_version: '12.6.9'
+          - cuda_version: '12.6.3'
             cuda_version_short: '12.6'
-            cuda_tag: '12.6.0-cudnn-devel-ubuntu22.04'
-            architectures: '75-virtual;80-virtual;86-virtual;89-virtual;90-virtual;100-virtual;120-virtual'
+            cuda_tag: '12.6.3-cudnn-devel-ubuntu22.04'
+            architectures: '75-virtual;80-virtual;86-virtual;89-virtual;90-virtual'
     
     steps:
       - name: Checkout
@@ -71,9 +71,6 @@ jobs:
 
       - name: Maximize build space
         run: |
-          echo "=== Initial Disk Space ==="
-          df -h
-          
           echo "=== Removing unnecessary packages ==="
           sudo apt-get remove -y '^aspnetcore-.*' || true
           sudo apt-get remove -y '^dotnet-.*' --fix-missing || true
@@ -97,9 +94,6 @@ jobs:
           
           # Clean docker system
           docker system prune -af || true
-          
-          echo "=== After Cleanup ==="
-          df -h
 
       - name: Build llama.cpp with CUDA
         run: |
@@ -113,20 +107,17 @@ jobs:
             bash -c "
               set -e
               
-              echo '=== Installing minimal dependencies ==='
               apt-get update -qq
               apt-get install -y --no-install-recommends git cmake ninja-build build-essential libssl-dev ca-certificates
               apt-get clean
               rm -rf /var/lib/apt/lists/*
               
-              echo '=== Cloning llama.cpp ==='
               cd /workspace
               git clone --depth 1 --branch ${{ needs.check-release.outputs.release_tag }} https://github.com/ggml-org/llama.cpp.git || \
                 (git clone https://github.com/ggml-org/llama.cpp.git && cd llama.cpp && git checkout ${{ needs.check-release.outputs.release_hash }})
               cd llama.cpp
               
-              echo '=== Configuring build with Ninja ==='
-              export LIBRARY_PATH="/usr/local/cuda/lib64/stubs${LIBRARY_PATH:+:$LIBRARY_PATH}"
+              export LIBRARY_PATH=\"/usr/local/cuda/lib64/stubs\${LIBRARY_PATH:+:\$LIBRARY_PATH}\"
 
               ln -sf /usr/local/cuda/lib64/stubs/libcuda.so /usr/local/cuda/lib64/stubs/libcuda.so.1
               cmake -B build -S . \
@@ -141,47 +132,28 @@ jobs:
                 -DCMAKE_EXE_LINKER_FLAGS='-Wl,-rpath-link,/usr/local/cuda/lib64/stubs' \
                 -DCMAKE_SHARED_LINKER_FLAGS='-Wl,-rpath-link,/usr/local/cuda/lib64/stubs'
               
-              echo '=== Building with Ninja (parallel: all cores) ==='
               cmake --build build --config Release -j\$(nproc)
               
-              echo '=== Copying binaries ==='
               cd /workspace
               mkdir -p binaries/cuda-${{ matrix.cuda_version_short }}
-
-              # Copy everything from build/bin
               cp -r llama.cpp/build/bin/* binaries/cuda-${{ matrix.cuda_version_short }}/
+              find binaries/cuda-${{ matrix.cuda_version_short }}/ -type f -executable ! -name \"*.so*\" -exec strip {} \; 2>/dev/null || true
 
-              # Strip binaries to reduce size (executables only, not .so files)
-              find binaries/cuda-${{ matrix.cuda_version_short }}/ -type f -executable ! -name "*.so*" -exec strip {} \; 2>/dev/null || true
-
-              echo '=== Creating version info ==='
               echo 'llama.cpp version: ${{ needs.check-release.outputs.release_tag }}' > binaries/cuda-${{ matrix.cuda_version_short }}/VERSION.txt
               echo 'CUDA version: ${{ matrix.cuda_version }}' >> binaries/cuda-${{ matrix.cuda_version_short }}/VERSION.txt
               echo 'Architectures: ${{ matrix.architectures }}' >> binaries/cuda-${{ matrix.cuda_version_short }}/VERSION.txt
-              echo 'Build date: '$(date -u +%Y-%m-%d) >> binaries/cuda-${{ matrix.cuda_version_short }}/VERSION.txt
               echo 'Build hash: ${{ needs.check-release.outputs.release_hash }}' >> binaries/cuda-${{ matrix.cuda_version_short }}/VERSION.txt
 
-              echo '=== Build complete ==='
-              ls -lh binaries/cuda-${{ matrix.cuda_version_short }}/
-              
-              echo '=== Cleaning up build directory ==='
               rm -rf llama.cpp
             "
           
-          # Remove Docker image to free space
           docker rmi nvidia/cuda:${{ matrix.cuda_tag }} || true
-          
-          # Fix permissions for files created by root in container
           sudo chown -R $(id -u):$(id -g) $PWD
-          
-          echo "=== Final disk usage ==="
-          df -h
 
       - name: Create tarball
         run: |
           cd binaries
           tar -czf llama.cpp-${{ needs.check-release.outputs.release_tag }}-cuda-${{ matrix.cuda_version_short }}.tar.gz cuda-${{ matrix.cuda_version_short }}
-          ls -lh *.tar.gz
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -208,38 +180,29 @@ jobs:
         run: |
           mkdir -p release-assets
           find artifacts -name "*.tar.gz" -exec cp {} release-assets/ \;
-          ls -lh release-assets/
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ needs.check-release.outputs.release_tag }}
-          name: llama.cpp ${{ needs.check-release.outputs.release_tag }} with CUDA
+          name: llama.cpp ${{ needs.check-release.outputs.release_tag }} with CUDA 12.6
           body: |
             # llama.cpp ${{ needs.check-release.outputs.release_tag }} with CUDA Support
             
-            Pre-built binaries of llama.cpp with CUDA support for multiple CUDA versions.
+            Pre-built binaries compiled explicitly for **CUDA 12.6**.
             
             **Source:** https://github.com/ggml-org/llama.cpp/releases/tag/${{ needs.check-release.outputs.release_tag }}
             **Commit:** ${{ needs.check-release.outputs.release_hash }}
             
-            ## CUDA Versions
-            - CUDA 12.8 - Architectures: 7.5, 8.0, 8.6, 8.9, 9.0, 10.0, 12.0
-            
-            ## Architecture Reference
-            - 7.5: Tesla T4, RTX 20xx series, Quadro RTX
-            - 8.0: A100
-            - 8.6: RTX 3000 series
-            - 8.9: RTX 4000 series, L4, L40
-            - 9.0: H100, H200
-            - 10.0: B200
-            - 12.0: RTX Pro series, RTX 50xx
+            ## Compatibility
+            - Compiled against CUDA Toolkit 12.6.
+            - Architectures supported: 7.5, 8.0, 8.6, 8.9, 9.0
             
             ## Usage
-            Download the appropriate tarball for your CUDA version and extract:
+            Download the tarball and extract:
             ```bash
-            tar -xzf llama.cpp-${{ needs.check-release.outputs.release_tag }}-cuda-12.8.tar.gz
-            ./llama-cli --help
+            tar -xzf llama.cpp-${{ needs.check-release.outputs.release_tag }}-cuda-12.6.tar.gz
+            ./llama-server --help
             ```
           files: release-assets/*
           draft: false
