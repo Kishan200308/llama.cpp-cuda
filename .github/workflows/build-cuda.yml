@@ -58,11 +58,11 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        cuda_version: ['12.8.1']
+        cuda_version: ['12.6.0']
         include:
-          - cuda_version: '12.8.1'
-            cuda_version_short: '12.8'
-            cuda_tag: '12.8.1-cudnn-devel-ubuntu22.04'
+          - cuda_version: '12.6.9'
+            cuda_version_short: '12.6'
+            cuda_tag: '12.6.0-cudnn-devel-ubuntu22.04'
             architectures: '75-virtual;80-virtual;86-virtual;89-virtual;90-virtual;100-virtual;120-virtual'
     
     steps:
